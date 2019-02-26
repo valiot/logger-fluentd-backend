@@ -38,8 +38,12 @@ defmodule LoggerFluentdBackend.Sender do
   end
 
   def handle_cast({_, _, data, options} = msg, %State{socket: nil} = state) do
-    socket = connect(data, options, state)
-    handle_cast(msg, %State{state | socket: socket})
+    case connect(data, options, state) do
+      nil ->
+        {:noreply, state}
+      socket ->
+        handle_cast(msg, %State{state | socket: socket})
+    end
   end
 
   def handle_cast({:send, tag, data, options}, %State{socket: socket} = state) do
@@ -66,6 +70,7 @@ defmodule LoggerFluentdBackend.Sender do
       {:error, _reason} ->
         #fail to connect to the fluentd Server, sending msg to the distributed system.
         GenServer.abcast(state.node_list, LoggerFluentdBackend.Receiver, {:forward_log, data.level, node(), data.message})
+        nil
     end
   end
 

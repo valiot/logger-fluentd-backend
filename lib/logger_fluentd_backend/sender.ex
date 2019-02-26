@@ -2,11 +2,14 @@ defmodule LoggerFluentdBackend.Sender do
   use GenServer
 
   defmodule State do
-    defstruct socket: nil
+    defstruct socket: nil,
+              node_list: nil
   end
 
   def init(_) do
-    {:ok, %State{socket: nil}}
+    env = Application.get_env(:logger, :logger_fluentd_backend, [])
+    node_list = Keyword.get(env, :node_list, [])
+    {:ok, %State{node_list: node_list}}
   end
 
   def send(tag, data, host, port, serializer) do
@@ -28,27 +31,47 @@ defmodule LoggerFluentdBackend.Sender do
     Socket.Stream.close(socket)
   end
 
+  def terminate(_reason, %State{socket: nil}), do: nil
+
   def start_link() do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
-  def handle_cast({_, _, _, options} = msg, %State{socket: nil} = state) do
-    socket = connect(options)
-    handle_cast(msg, %State{state | socket: socket})
+  def handle_cast({_, _, data, options} = msg, %State{socket: nil} = state) do
+    case connect(data, options, state) do
+      nil ->
+        {:noreply, state}
+      socket ->
+        handle_cast(msg, %State{state | socket: socket})
+    end
   end
 
   def handle_cast({:send, tag, data, options}, %State{socket: socket} = state) do
     packet = serializer(options[:serializer]).([tag, now(), data])
-    Socket.Stream.send!(socket, packet)
-    {:noreply, state}
+    new_state =
+    case Socket.Stream.send(socket, packet) do
+      {:error, _reason} ->
+        #fail sending msg to the fluentd Server, sending msg to the distributed system.
+        GenServer.abcast(state.node_list, LoggerFluentdBackend.Receiver, {:forward_log, data.level, node(), data.message})
+        %State{state| socket: nil}
+      _ ->
+        state
+    end
+    {:noreply, new_state}
   end
 
-  defp connect(options) do
-    Socket.TCP.connect!(
-      options[:host] || "localhost",
-      options[:port] || 24224,
-      packet: 0
-    )
+  defp connect(data, options, state) do
+    host = options[:host] || "localhost"
+    port = options[:port] || 24224
+    #add better error handler
+    case Socket.TCP.connect(host, port, packet: 0) do
+      {:ok, socket} ->
+        socket
+      {:error, _reason} ->
+        #fail to connect to the fluentd Server, sending msg to the distributed system.
+        GenServer.abcast(state.node_list, LoggerFluentdBackend.Receiver, {:forward_log, data.level, node(), data.message})
+        nil
+    end
   end
 
   defp serializer(:msgpack), do: &Msgpax.pack!/1

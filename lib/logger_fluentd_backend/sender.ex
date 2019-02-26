@@ -31,6 +31,8 @@ defmodule LoggerFluentdBackend.Sender do
     Socket.Stream.close(socket)
   end
 
+  def terminate(_reason, %State{socket: nil}), do: nil
+
   def start_link() do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end

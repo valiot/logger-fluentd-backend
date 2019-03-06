@@ -15,9 +15,14 @@ defmodule LoggerFluentdBackend.Receiver do
     case level do
       "warn" ->
         Logger.warn(msg)
+
       "error" ->
         Logger.error(msg)
+
+      _ ->
+        Logger.error(msg)
     end
+
     {:noreply, config}
   end
 end

@@ -13,11 +13,22 @@ defmodule LoggerFluentdBackend.Receiver do
   # Agregar metodo de handleo de datos.
   def handle_cast({:forward_log, level, _node, msg}, config) do
     case level do
+      "debug" ->
+        Logger.debug(msg)
+
+      "info" ->
+        Logger.info(msg)
+
       "warn" ->
         Logger.warn(msg)
+
       "error" ->
         Logger.error(msg)
+
+      _ ->
+        Logger.error(msg)
     end
+
     {:noreply, config}
   end
 end
